@@ -1,0 +1,87 @@
+name: release
+
+on:
+  # Create a release by pushing a version tag, for example: v0.3.0.
+  push:
+    tags:
+      - 'v*'
+  # This is useful when a release needs to be rebuilt without pushing another
+  # tag. The release is created at the commit selected in the Actions UI.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (for example, v0.3.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  release:
+    name: Build and publish Linux x86_64 binary
+    # Build on the older supported Ubuntu image so the glibc requirement is
+    # compatible with more Linux distributions than a newer runner image.
+    runs-on: ubuntu-22.04
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      # Rust uses the canonical target triple for compilation. Keep a shorter,
+      # user-facing platform name for the downloaded release asset.
+      TARGET: x86_64-unknown-linux-gnu
+      ARCHIVE_PLATFORM: linux-amd64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build walrus
+        run: cargo build --release --locked --target "$TARGET" --bin walrus
+
+      - name: Package release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          package_dir="walrus-${version}-${ARCHIVE_PLATFORM}"
+          archive="${package_dir}.tar.gz"
+
+          mkdir -p "dist/${package_dir}"
+          install -m 0755 "target/${TARGET}/release/walrus" "dist/${package_dir}/walrus"
+          cp README.md LICENSE "dist/${package_dir}/"
+
+          tar -C dist -czf "dist/${archive}" "${package_dir}"
+          # Keep only the archive name in the checksum file so it can be
+          # verified after both release assets are downloaded into one folder.
+          (cd dist && sha256sum "${archive}" > "${archive}.sha256")
+
+          echo "ARCHIVE=${archive}" >> "$GITHUB_ENV"
+
+      - name: Verify packaged binary
+        run: |
+          tar -tzf "dist/${ARCHIVE}"
+          (cd dist && sha256sum --check "${ARCHIVE}.sha256")
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: walrus ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.tar.gz
+            dist/*.sha256
