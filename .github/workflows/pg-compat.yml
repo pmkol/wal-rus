@@ -6,9 +6,6 @@ name: pg-compat
 # walrus writes & wal-g reads, reverse: wal-g writes & walrus reads).
 
 on:
-  push:
-    branches: [master, main]
-  pull_request:
   workflow_dispatch:
 
 env:

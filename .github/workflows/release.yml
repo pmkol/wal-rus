@@ -1,12 +1,8 @@
 name: release
 
 on:
-  # Create a release by pushing a version tag, for example: v0.3.0.
-  push:
-    tags:
-      - 'v*'
-  # This is useful when a release needs to be rebuilt without pushing another
-  # tag. The release is created at the commit selected in the Actions UI.
+  # Run this workflow manually from the Actions UI. The release is created at
+  # the selected commit using the tag entered below.
   workflow_dispatch:
     inputs:
       tag:
